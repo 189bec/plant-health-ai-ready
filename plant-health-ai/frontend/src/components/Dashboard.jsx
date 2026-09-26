@@ -6,11 +6,13 @@ import EnvironmentalCharts from './EnvironmentalCharts';
 import SystemArchitecture from './SystemArchitecture';
 import AnalysisHistory from './AnalysisHistory';
 import ModelInfo from './ModelInfo';
-import { Zap, Droplet, Waves } from 'lucide-react';
+import { Zap, Droplet, Waves, Radio, Activity } from 'lucide-react';
 
 const Dashboard = () => {
   const [bioData, setBioData] = useState([]);
   const [envData, setEnvData] = useState([]);
+  const [loraData, setLoraData] = useState({ snr: 7.5, rssi: -85 });
+  const [isDemoMode, setIsDemoMode] = useState(false);
 
   // Connect to WebSocket for live sensor data
   useEffect(() => {
@@ -42,10 +44,12 @@ const Dashboard = () => {
         newData.push({ time: data.timestamp, moisture: data.soil_moisture, water: data.water_level });
         return newData;
       });
+
+      setLoraData({ snr: data.lora_snr || 7.5, rssi: data.lora_rssi || -85 });
     };
     
     ws.onerror = () => {
-      // If websocket fails (backend not running), start mock data so UI doesn't look broken
+      // If websocket fails, start mock data so UI doesn't look broken
       interval = setInterval(() => {
         setBioData(prev => {
           const newData = [...prev.slice(1)];
@@ -68,45 +72,75 @@ const Dashboard = () => {
     };
   }, []);
 
-  const currentVoltage = bioData.length > 0 ? bioData[bioData.length - 1].voltage.toFixed(2) : '1.90';
+  const triggerSpike = async () => {
+    try {
+      await fetch('http://localhost:8000/api/sensors/spike', { method: 'POST' });
+    } catch (e) {
+      console.error('Failed to trigger spike', e);
+    }
+  };
+
+  const currentVoltage = bioData.length > 0 ? bioData[bioData.length - 1].voltage.toFixed(3) : '1.900';
   const currentMoisture = envData.length > 0 ? envData[envData.length - 1].moisture.toFixed(0) : '42';
   const currentWater = envData.length > 0 ? envData[envData.length - 1].water.toFixed(0) : '78';
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6 pb-12">
+    <div className="max-w-7xl mx-auto space-y-6 pb-12 bg-cream-50 px-4 py-8">
       
       <div className="flex flex-col md:flex-row gap-6">
         {/* Left Column: AI & History */}
         <div className="flex-1 space-y-6">
           <PlantAnalysis />
           <ModelInfo />
-          <AnalysisHistory />
+          <SystemArchitecture />
         </div>
         
         {/* Right Column: Sensors & Live Data */}
-        <div className="w-full md:w-[45%] lg:w-[40%] space-y-6 flex flex-col">
+        <div className="w-full md:w-[50%] lg:w-[45%] space-y-6 flex flex-col">
+          {/* Action Row */}
+          <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-terracotta-100">
+             <div className="flex items-center gap-2">
+                <Radio size={24} className="text-terracotta-500" />
+                <span className="font-semibold text-terracotta-800">LoRa Link Active</span>
+             </div>
+             <button 
+                onClick={triggerSpike}
+                className="bg-sage-600 hover:bg-sage-800 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors shadow-sm"
+             >
+                <Activity size={16} />
+                Simulate Leaf Touch
+             </button>
+          </div>
+
           {/* Sensor Cards Row */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <SensorCard 
               title="Bioelectric" 
               value={`${currentVoltage} V`} 
               status="Live" 
-              icon={<Zap size={20} className="text-yellow-500" />} 
-              colorClass="bg-yellow-50 border-yellow-100"
+              icon={<Zap size={20} className="text-terracotta-600" />} 
+              colorClass="bg-terracotta-50 border-terracotta-200"
             />
             <SensorCard 
-              title="Soil Moisture" 
+              title="Soil Moist" 
               value={`${currentMoisture}%`}
               status="Normal" 
-              icon={<Droplet size={20} className="text-blue-500" />} 
-              colorClass="bg-blue-50 border-blue-100"
+              icon={<Droplet size={20} className="text-sage-600" />} 
+              colorClass="bg-sage-50 border-sage-200"
             />
             <SensorCard 
-              title="Water Level" 
-              value={`${currentWater}%`} 
-              status="Good" 
-              icon={<Waves size={20} className="text-cyan-500" />} 
-              colorClass="bg-cyan-50 border-cyan-100"
+              title="LoRa SNR" 
+              value={`${loraData.snr.toFixed(1)} dB`} 
+              status="SF: 12" 
+              icon={<Radio size={20} className="text-terracotta-500" />} 
+              colorClass="bg-cream-100 border-terracotta-100"
+            />
+            <SensorCard 
+              title="LoRa RSSI" 
+              value={`${loraData.rssi} dBm`} 
+              status="BW: 125kHz" 
+              icon={<Radio size={20} className="text-terracotta-500" />} 
+              colorClass="bg-cream-100 border-terracotta-100"
             />
           </div>
 
@@ -114,8 +148,6 @@ const Dashboard = () => {
           <EnvironmentalCharts data={envData} currentMoisture={currentMoisture} currentWater={currentWater} />
         </div>
       </div>
-
-      <SystemArchitecture />
     </div>
   );
 };

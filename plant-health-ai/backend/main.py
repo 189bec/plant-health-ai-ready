@@ -1,11 +1,12 @@
-from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import uvicorn
 import io
 from inference.detector import PlantDetector
 from websocket.sensor_socket import SensorSocketManager
 
-app = FastAPI(title="Plant Health AI Backend")
+app = FastAPI(title="Plant Health AI Backend - LoRa & Edge AI")
 
 app.add_middleware(
     CORSMiddleware,
@@ -17,6 +18,13 @@ app.add_middleware(
 detector = PlantDetector()
 sensor_socket_manager = SensorSocketManager()
 
+class LoRaPayload(BaseModel):
+    electrode_voltage: float = None
+    soil_moisture: float = None
+    water_level: float = None
+    lora_snr: float = None
+    lora_rssi: int = None
+
 @app.get("/")
 def root():
     return {"status": "FastAPI is running! Use /docs for Swagger UI."}
@@ -24,6 +32,30 @@ def root():
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+@app.get("/api/sensors/history")
+def get_sensor_history():
+    """Returns 5-day historical drift data for the Demo"""
+    history = sensor_socket_manager.sensor_service.get_historical_drift()
+    return {"success": True, "data": history}
+
+@app.post("/api/sensors/spike")
+def trigger_spike():
+    """Triggers a simulated leaf-touch bioelectric spike"""
+    sensor_socket_manager.sensor_service.trigger_touch_spike()
+    return {"success": True, "message": "Spike triggered"}
+
+@app.post("/api/sensors/data")
+def receive_lora_data(payload: LoRaPayload):
+    """Ingest real LoRa gateway data"""
+    sensor_socket_manager.sensor_service.update_data(
+        voltage=payload.electrode_voltage,
+        moisture=payload.soil_moisture,
+        water=payload.water_level,
+        snr=payload.lora_snr,
+        rssi=payload.lora_rssi
+    )
+    return {"success": True, "message": "Data ingested via LoRa"}
 
 @app.get("/reload")
 def reload_model():
